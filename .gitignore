@@ -1,0 +1,13 @@
+node_modules/
+.env
+*.pem
+*.key
+dist/
+.expo/
+ios/
+android/
+web-build/
+*.tsbuildinfo
+.DS_Store
+*.log
+server/data/

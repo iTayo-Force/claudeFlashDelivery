@@ -1,0 +1,23 @@
+{
+  "name": "flash-delivery-server",
+  "version": "1.0.0",
+  "description": "Flash Delivery API server - Salesforce integration backend",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "jsforce": "^1.11.1",
+    "libphonenumber-js": "^1.11.18",
+    "morgan": "^1.10.0",
+    "zod": "^3.24.2"
+  }
+}
