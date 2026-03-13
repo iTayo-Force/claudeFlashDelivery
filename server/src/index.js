@@ -20,6 +20,7 @@ const trackingRouter = require('./routes/tracking');
 const paymentsRouter = require('./routes/payments');
 const mobileMoneyRouter = require('./routes/mobileMoneyPayments');
 const syncRouter = require('./routes/sync');
+const notificationsRouter = require('./routes/notifications');
 
 const app = express();
 
@@ -59,6 +60,7 @@ app.use('/api/tracking', trackingRouter);
 app.use('/api/payments', paymentsRouter);
 app.use('/api/mobile-money', mobileMoneyRouter);
 app.use('/api/sync', syncRouter);
+app.use('/api/notifications', notificationsRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {

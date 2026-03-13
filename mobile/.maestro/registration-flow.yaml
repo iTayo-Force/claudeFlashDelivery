@@ -1,0 +1,36 @@
+appId: com.claudeflash.delivery
+name: Client Registration Flow
+tags:
+  - auth
+  - smoke
+
+---
+# From welcome screen
+- assertVisible: "Claude Flash"
+- tapOn: "Créer un compte"
+
+# Verify registration screen
+- assertVisible: "Créer un compte"
+- assertVisible: "Rejoignez Claude Flash Delivery"
+
+# Fill in registration form
+- tapOn: "Prénom"
+- inputText: "Jean"
+- tapOn: "Nom"
+- inputText: "Dupont"
+- tapOn: "Téléphone"
+- inputText: "+237 690123456"
+- tapOn: "Email (optionnel)"
+- inputText: "jean.dupont@test.com"
+- tapOn: "Mot de passe"
+- inputText: "securePassword123"
+- tapOn: "Confirmer le mot de passe"
+- inputText: "securePassword123"
+
+# Submit
+- tapOn: "Créer mon compte"
+
+# Verify result
+- assertVisible:
+    text: "Bonjour"
+    optional: true

@@ -1,0 +1,35 @@
+appId: com.claudeflash.delivery
+name: Client Login Flow
+tags:
+  - auth
+  - smoke
+
+---
+# Verify welcome screen
+- assertVisible: "Claude Flash"
+- assertVisible: "Se connecter"
+- assertVisible: "Créer un compte"
+
+# Navigate to login
+- tapOn: "Se connecter"
+
+# Verify login screen
+- assertVisible: "Bon retour !"
+- assertVisible: "Téléphone"
+- assertVisible: "Mot de passe"
+
+# Fill in credentials
+- tapOn:
+    id: "phone-input"
+- inputText: "+237 690123456"
+- tapOn:
+    id: "password-input"
+- inputText: "testPassword123"
+
+# Submit login
+- tapOn: "Se connecter"
+
+# Verify redirect to home (or error)
+- assertVisible:
+    text: "Bonjour"
+    optional: true

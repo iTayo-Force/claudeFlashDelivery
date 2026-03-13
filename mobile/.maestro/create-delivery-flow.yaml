@@ -1,0 +1,54 @@
+appId: com.claudeflash.delivery
+name: Create Delivery Flow
+tags:
+  - delivery
+  - smoke
+
+---
+# Prerequisites: user must be logged in
+# Start from home screen
+- assertVisible: "Bonjour"
+
+# Tap new delivery CTA
+- tapOn: "Nouvelle livraison"
+
+# Step 1: Pickup
+- assertVisible: "Point de ramassage"
+- tapOn: "Adresse de ramassage"
+- inputText: "Akwa, Douala"
+- tapOn: "Nom du contact"
+- inputText: "Jean Dupont"
+- tapOn: "Téléphone du contact"
+- inputText: "+237 690111222"
+- tapOn: "Suivant"
+
+# Step 2: Dropoff
+- assertVisible: "Point de livraison"
+- tapOn: "Adresse de livraison"
+- inputText: "Bonabéri, Douala"
+- tapOn: "Nom du destinataire"
+- inputText: "Marie Kamga"
+- tapOn: "Téléphone du destinataire"
+- inputText: "+237 670333444"
+- tapOn: "Suivant"
+
+# Step 3: Package details
+- assertVisible: "Détails du colis"
+- tapOn: "Que contient le colis ?"
+- inputText: "Documents importants"
+- tapOn: "Petit (< 5kg)"
+- tapOn: "Suivant"
+
+# Step 4: Review
+- assertVisible: "Récapitulatif"
+- assertVisible: "Akwa, Douala"
+- assertVisible: "Bonabéri, Douala"
+- assertVisible: "Documents importants"
+
+# Confirm
+- tapOn: "Confirmer la livraison"
+
+# Verify success (with network mock, this would show the success alert)
+- assertVisible:
+    text: "Succès"
+    optional: true

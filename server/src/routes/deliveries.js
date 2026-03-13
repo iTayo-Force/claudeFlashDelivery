@@ -6,6 +6,7 @@ const validateSfIdParam = require('../middleware/validateSfId');
 const deliveryService = require('../services/deliveryService');
 const paymentService = require('../services/paymentService');
 const realtimeService = require('../services/realtimeService');
+const pushNotificationService = require('../services/pushNotificationService');
 
 const SF_ID_REGEX = /^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$/;
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
@@ -166,6 +167,16 @@ router.post('/:id/status', validateSfIdParam(), validateRequest(statusSchema), a
       status: updated.Status__c,
       driverId: updated.Driver__c,
     });
+
+    // Send push notification to sender
+    if (updated.Sender__c) {
+      pushNotificationService.notifyDeliveryStatus(updated.Sender__c, {
+        id: updated.Id,
+        ref: updated.Delivery_Reference__c || updated.Name,
+      }, status).catch((err) => {
+        console.error('Push notification failed:', err.message);
+      });
+    }
 
     res.json(updated);
   } catch (err) {

@@ -58,6 +58,20 @@ export default function ClientLayout() {
           tabBarIcon: ({ color }) => <TabIcon name="profile" color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="payment"
+        options={{
+          title: 'Paiement',
+          href: null, // Hidden from tab bar (navigated to programmatically)
+        }}
+      />
+      <Tabs.Screen
+        name="track"
+        options={{
+          title: 'Suivi en direct',
+          href: null, // Hidden from tab bar
+        }}
+      />
     </Tabs>
   );
 }
