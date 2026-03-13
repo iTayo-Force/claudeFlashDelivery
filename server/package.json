@@ -16,7 +16,7 @@
     "express-rate-limit": "^7.5.0",
     "google-auth-library": "^10.6.1",
     "helmet": "^8.0.0",
-    "jsforce": "^1.11.1",
+    "jsforce": "^3.10.14",
     "jsonwebtoken": "^9.0.2",
     "libphonenumber-js": "^1.11.18",
     "morgan": "^1.10.0",
