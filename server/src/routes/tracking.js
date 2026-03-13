@@ -5,6 +5,7 @@ const validateRequest = require('../middleware/validateRequest');
 const validateSfIdParam = require('../middleware/validateSfId');
 const employeeService = require('../services/employeeService');
 const deliveryService = require('../services/deliveryService');
+const realtimeService = require('../services/realtimeService');
 
 const router = express.Router();
 
@@ -23,6 +24,18 @@ router.post('/location', employeeAuth, validateRequest(locationSchema), async (r
       return res.status(403).json({ error: 'Only drivers can update location' });
     }
     await employeeService.updateLocation(req.employee.employeeId, req.body.lat, req.body.lng);
+
+    // Broadcast location update via WebSocket
+    const deliveries = await deliveryService.listByDriver(req.employee.employeeId, {});
+    const activeDeliveryIds = deliveries.records
+      .filter((d) => ['Ordered', 'Picked up'].includes(d.Status__c))
+      .map((d) => d.Id);
+    realtimeService.broadcastDriverLocation(
+      req.employee.employeeId,
+      { lat: req.body.lat, lng: req.body.lng },
+      activeDeliveryIds
+    );
+
     res.json({ message: 'Location updated' });
   } catch (err) {
     next(err);

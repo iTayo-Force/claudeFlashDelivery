@@ -5,7 +5,8 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "test": "jest --forceExit"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -19,6 +20,10 @@
     "jsonwebtoken": "^9.0.2",
     "libphonenumber-js": "^1.11.18",
     "morgan": "^1.10.0",
+    "ws": "^8.19.0",
     "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "jest": "^30.3.0"
   }
 }

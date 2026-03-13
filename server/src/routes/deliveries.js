@@ -5,6 +5,7 @@ const validateRequest = require('../middleware/validateRequest');
 const validateSfIdParam = require('../middleware/validateSfId');
 const deliveryService = require('../services/deliveryService');
 const paymentService = require('../services/paymentService');
+const realtimeService = require('../services/realtimeService');
 
 const SF_ID_REGEX = /^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$/;
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
@@ -159,6 +160,13 @@ router.post('/:id/status', validateSfIdParam(), validateRequest(statusSchema), a
     }
 
     const updated = await deliveryService.findById(req.params.id);
+
+    // Broadcast status change via WebSocket
+    realtimeService.broadcastDeliveryUpdate(req.params.id, {
+      status: updated.Status__c,
+      driverId: updated.Driver__c,
+    });
+
     res.json(updated);
   } catch (err) {
     next(err);
