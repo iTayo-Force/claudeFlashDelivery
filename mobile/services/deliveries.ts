@@ -35,6 +35,10 @@ export interface Delivery {
   estimatedDeliveryTime?: string;
   driverName?: string;
   driverPhone?: string;
+  pickupLat?: number;
+  pickupLng?: number;
+  dropoffLat?: number;
+  dropoffLng?: number;
 }
 
 export interface PriceEstimate {
