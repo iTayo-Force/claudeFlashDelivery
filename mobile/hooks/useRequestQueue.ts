@@ -67,7 +67,7 @@ export function useRequestQueue() {
         if (req.retries >= 3) continue;
 
         try {
-          await api[req.method](req.url, req.data);
+          await api[req.method](req.url, req.data as Record<string, unknown>);
         } catch {
           remaining.push({ ...req, retries: req.retries + 1 });
         }

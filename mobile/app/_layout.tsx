@@ -10,7 +10,7 @@ import { colors } from '../utils/theme';
 
 export default function RootLayout() {
   const restore = useAuth((s) => s.restore);
-  const isLoggedIn = useAuth((s) => !!s.accessToken);
+  const isLoggedIn = useAuth((s) => s.isAuthenticated);
   useNotifications();
 
   useEffect(() => {

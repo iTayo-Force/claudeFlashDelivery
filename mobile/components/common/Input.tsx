@@ -17,7 +17,7 @@ export function Input({ label, error, icon, style, ...props }: InputProps) {
       <View style={[styles.inputContainer, focused && styles.focused, error && styles.errorBorder]}>
         {icon && <View style={styles.icon}>{icon}</View>}
         <TextInput
-          style={[styles.input, icon && styles.inputWithIcon, style]}
+          style={[styles.input, !!icon && styles.inputWithIcon, style]}
           placeholderTextColor={colors.gray[400]}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}

@@ -7,7 +7,7 @@ export function useDeliveries() {
   const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
 
-  const fetchMyDeliveries = useCallback(async (params?: { status?: string; page?: number }) => {
+  const fetchMyDeliveries = useCallback(async (params?: { status?: string; page?: number; limit?: number }) => {
     setLoading(true);
     setError(null);
     try {
