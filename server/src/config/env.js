@@ -32,6 +32,12 @@ module.exports = {
     refreshExpiry: process.env.JWT_REFRESH_EXPIRY || '7d',
   },
   googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || '',
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID || '',
+  },
+  apple: {
+    clientId: process.env.APPLE_CLIENT_ID || '',
+  },
   orangeMoney: {
     clientId: process.env.ORANGE_MONEY_CLIENT_ID || '',
     clientSecret: process.env.ORANGE_MONEY_CLIENT_SECRET || '',
@@ -43,10 +49,6 @@ module.exports = {
     apiKey: process.env.MTN_MOMO_API_KEY || '',
     environment: process.env.MTN_MOMO_ENVIRONMENT || 'sandbox',
     callbackUrl: process.env.MTN_MOMO_CALLBACK_URL || '',
-  },
-  orangeSms: {
-    clientId: process.env.ORANGE_SMS_CLIENT_ID || '',
-    clientSecret: process.env.ORANGE_SMS_CLIENT_SECRET || '',
   },
   port: parseInt(process.env.PORT, 10) || 3001,
   nodeEnv: process.env.NODE_ENV || 'development',

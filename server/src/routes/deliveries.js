@@ -52,13 +52,13 @@ const updateSchema = z.object({
 });
 
 const statusSchema = z.object({
-  status: z.enum(['New', 'Assigned', 'Picked Up', 'In Transit', 'Delivered', 'Cancelled']),
+  status: z.enum(['Ordered', 'Picked up', 'Canceled', 'Delivered']),
   amountCollected: z.number().optional(),
   cancellationReason: z.string().max(255).optional(),
 });
 
 const listSchema = z.object({
-  status: z.enum(['New', 'Assigned', 'Picked Up', 'In Transit', 'Delivered', 'Cancelled']).optional(),
+  status: z.enum(['Ordered', 'Picked up', 'Canceled', 'Delivered']).optional(),
   city: z.string().max(50).optional(),
   driverId: z.string().regex(SF_ID_REGEX, 'Invalid Salesforce ID').optional(),
   managerId: z.string().regex(SF_ID_REGEX, 'Invalid Salesforce ID').optional(),

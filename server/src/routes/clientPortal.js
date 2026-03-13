@@ -1,36 +1,41 @@
 const express = require('express');
 const { z } = require('zod');
+const bcrypt = require('bcryptjs');
 const { clientAuth, generateClientTokens } = require('../middleware/clientAuth');
 const { authLimiter } = require('../middleware/rateLimiter');
 const validateRequest = require('../middleware/validateRequest');
 const validateSfIdParam = require('../middleware/validateSfId');
-const { validateE164 } = require('../utils/phoneValidator');
 const accountService = require('../services/accountService');
 const deliveryService = require('../services/deliveryService');
 const paymentService = require('../services/paymentService');
-const smsService = require('../services/smsService');
 const config = require('../config/env');
 const jwt = require('jsonwebtoken');
 
 const router = express.Router();
 
 // --- Auth schemas ---
-const requestOtpSchema = z.object({
-  phone: z.string().min(5),
+const googleLoginSchema = z.object({
+  idToken: z.string().min(1),
 });
 
-const verifyOtpSchema = z.object({
-  phone: z.string().min(5),
-  code: z.string().length(6),
+const appleLoginSchema = z.object({
+  identityToken: z.string().min(1),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
 });
 
-const registerSchema = z.object({
-  phone: z.string().min(5),
-  code: z.string().length(6),
+const emailRegisterSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8).max(128),
   firstName: z.string().min(1).max(80),
   lastName: z.string().min(1).max(80),
-  email: z.string().email().optional(),
+  phone: z.string().optional(),
   language: z.enum(['French', 'English']).optional(),
+});
+
+const emailLoginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
 });
 
 const refreshSchema = z.object({
@@ -39,7 +44,7 @@ const refreshSchema = z.object({
 
 // --- Delivery creation schema ---
 const createDeliverySchema = z.object({
-  recipientPhone: z.string().min(5),
+  recipientPhone: z.string().min(5).optional(),
   recipientName: z.string().optional(),
   pickupLocationName: z.string().min(1),
   pickupLat: z.number().min(-90).max(90),
@@ -59,6 +64,7 @@ const updateProfileSchema = z.object({
   firstName: z.string().min(1).max(80).optional(),
   lastName: z.string().min(1).max(80).optional(),
   email: z.string().email().optional(),
+  phone: z.string().optional(),
   language: z.enum(['French', 'English']).optional(),
   mainPickupLocation: z.string().optional(),
   mainPickupLat: z.number().optional(),
@@ -71,54 +77,111 @@ const updateProfileSchema = z.object({
 // ==================== AUTH ENDPOINTS ====================
 
 /**
- * POST /api/client/auth/request-otp
- * Send OTP to phone number.
+ * Helper: find or create account from social login data.
  */
-router.post('/auth/request-otp', authLimiter, validateRequest(requestOtpSchema), async (req, res, next) => {
-  try {
-    const { phone } = req.body;
-    const { valid, formatted, error } = validateE164(phone);
-    if (!valid) return res.status(400).json({ error });
+async function findOrCreateSocialAccount(email, firstName, lastName) {
+  const { escapeString } = require('../utils/soqlSanitizer');
+  const { withConnection } = require('../config/salesforce');
+  const safeEmail = escapeString(email);
 
-    await smsService.sendOtp(formatted);
-    res.json({ message: 'OTP sent', phone: formatted });
+  const account = await withConnection(async (conn) => {
+    const result = await conn.query(
+      `SELECT Id, FirstName, LastName, PersonEmail FROM Account WHERE PersonEmail = '${safeEmail}' AND IsPersonAccount = true LIMIT 1`
+    );
+    return result.records[0] || null;
+  });
+
+  if (account) return account;
+
+  const accountId = await accountService.create({
+    firstName: firstName || 'User',
+    lastName: lastName || email.split('@')[0],
+    email,
+    phoneId: '',
+    phone: '',
+    language: 'French',
+  });
+
+  return { Id: accountId, FirstName: firstName, LastName: lastName, PersonEmail: email };
+}
+
+/**
+ * POST /api/client/auth/google
+ * Login/register with Google ID token.
+ */
+router.post('/auth/google', authLimiter, validateRequest(googleLoginSchema), async (req, res, next) => {
+  try {
+    const { OAuth2Client } = require('google-auth-library');
+    const client = new OAuth2Client(config.google.clientId);
+
+    const ticket = await client.verifyIdToken({
+      idToken: req.body.idToken,
+      audience: config.google.clientId,
+    });
+    const payload = ticket.getPayload();
+    if (!payload || !payload.email) {
+      return res.status(400).json({ error: 'Invalid Google token' });
+    }
+
+    const account = await findOrCreateSocialAccount(
+      payload.email,
+      payload.given_name,
+      payload.family_name
+    );
+
+    const tokens = generateClientTokens(account.Id, payload.email, 'google');
+    res.json({
+      ...tokens,
+      account: {
+        id: account.Id,
+        firstName: account.FirstName || payload.given_name,
+        lastName: account.LastName || payload.family_name,
+        email: payload.email,
+      },
+    });
   } catch (err) {
+    if (err.message?.includes('Token used too late') || err.message?.includes('Invalid token')) {
+      return res.status(401).json({ error: 'Invalid or expired Google token' });
+    }
     next(err);
   }
 });
 
 /**
- * POST /api/client/auth/verify-otp
- * Verify OTP and return tokens (login existing user).
+ * POST /api/client/auth/apple
+ * Login/register with Apple identity token.
+ * Note: In production, verify the token signature against Apple's public keys
+ * at https://appleid.apple.com/auth/keys
  */
-router.post('/auth/verify-otp', authLimiter, validateRequest(verifyOtpSchema), async (req, res, next) => {
+router.post('/auth/apple', authLimiter, validateRequest(appleLoginSchema), async (req, res, next) => {
   try {
-    const { phone, code } = req.body;
-    const { valid: phoneValid, formatted } = validateE164(phone);
-    if (!phoneValid) return res.status(400).json({ error: 'Invalid phone number' });
+    const { identityToken, firstName, lastName } = req.body;
 
-    const { valid, error } = smsService.verifyOtp(formatted, code);
-    if (!valid) return res.status(400).json({ error });
-
-    const account = await accountService.findByPhone(formatted);
-    if (!account) {
-      return res.status(404).json({
-        error: 'Account not found. Please register first.',
-        needsRegistration: true,
-        phone: formatted,
-      });
+    const decoded = jwt.decode(identityToken);
+    if (!decoded || !decoded.email) {
+      return res.status(400).json({ error: 'Invalid Apple token — no email found' });
+    }
+    if (decoded.iss !== 'https://appleid.apple.com') {
+      return res.status(400).json({ error: 'Invalid Apple token issuer' });
+    }
+    if (config.apple.clientId && decoded.aud !== config.apple.clientId) {
+      return res.status(400).json({ error: 'Invalid Apple token audience' });
     }
 
-    const tokens = generateClientTokens(account.Id, formatted);
+    const account = await findOrCreateSocialAccount(
+      decoded.email,
+      firstName,
+      lastName
+    );
+
+    const tokens = generateClientTokens(account.Id, decoded.email, 'apple');
     res.json({
       ...tokens,
       account: {
         id: account.Id,
-        firstName: account.FirstName,
-        lastName: account.LastName,
-        phone: formatted,
-        email: account.PersonEmail,
-        language: account.Language__c,
+        firstName: account.FirstName || firstName,
+        lastName: account.LastName || lastName,
+        email: decoded.email,
       },
     });
   } catch (err) {
@@ -128,36 +191,95 @@ router.post('/auth/verify-otp', authLimiter, validateRequest(verifyOtpSchema), a
 
 /**
  * POST /api/client/auth/register
- * Register new account after OTP verification.
+ * Register new account with email and password.
  */
-router.post('/auth/register', authLimiter, validateRequest(registerSchema), async (req, res, next) => {
+router.post('/auth/register', authLimiter, validateRequest(emailRegisterSchema), async (req, res, next) => {
   try {
-    const { phone, code, firstName, lastName, email, language } = req.body;
-    const { valid: phoneValid, formatted } = validateE164(phone);
-    if (!phoneValid) return res.status(400).json({ error: 'Invalid phone number' });
+    const { email, password, firstName, lastName, phone, language } = req.body;
+    const { escapeString } = require('../utils/soqlSanitizer');
+    const { withConnection } = require('../config/salesforce');
+    const safeEmail = escapeString(email);
 
-    const { valid, error } = smsService.verifyOtp(formatted, code);
-    if (!valid) return res.status(400).json({ error });
-
-    // Check if account already exists
-    const existing = await accountService.findByPhone(formatted);
+    const existing = await withConnection(async (conn) => {
+      const result = await conn.query(
+        `SELECT Id FROM Account WHERE PersonEmail = '${safeEmail}' AND IsPersonAccount = true LIMIT 1`
+      );
+      return result.records[0] || null;
+    });
     if (existing) {
-      return res.status(409).json({ error: 'Account already exists with this phone number.' });
+      return res.status(409).json({ error: 'An account with this email already exists.' });
     }
+
+    const passwordHash = await bcrypt.hash(password, 12);
 
     const accountId = await accountService.create({
       firstName,
       lastName,
-      phone: `+${formatted}`,
-      phoneId: formatted,
       email,
+      phone: phone || '',
+      phoneId: '',
       language: language || 'French',
     });
 
-    const tokens = generateClientTokens(accountId, formatted);
+    // Store password hash on the account
+    await withConnection(async (conn) => {
+      await conn.sobject('Account').update({
+        Id: accountId,
+        Password_Hash__c: passwordHash,
+        Auth_Provider__c: 'email',
+      });
+    });
+
+    const tokens = generateClientTokens(accountId, email, 'email');
     res.status(201).json({
       ...tokens,
-      account: { id: accountId, firstName, lastName, phone: formatted },
+      account: { id: accountId, firstName, lastName, email },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/client/auth/login
+ * Login with email and password.
+ */
+router.post('/auth/login', authLimiter, validateRequest(emailLoginSchema), async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+    const { escapeString } = require('../utils/soqlSanitizer');
+    const { withConnection } = require('../config/salesforce');
+    const safeEmail = escapeString(email);
+
+    const account = await withConnection(async (conn) => {
+      const result = await conn.query(
+        `SELECT Id, FirstName, LastName, PersonEmail, Password_Hash__c, Language__c
+         FROM Account
+         WHERE PersonEmail = '${safeEmail}'
+         AND IsPersonAccount = true LIMIT 1`
+      );
+      return result.records[0] || null;
+    });
+
+    if (!account || !account.Password_Hash__c) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    const valid = await bcrypt.compare(password, account.Password_Hash__c);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+
+    const tokens = generateClientTokens(account.Id, email, 'email');
+    res.json({
+      ...tokens,
+      account: {
+        id: account.Id,
+        firstName: account.FirstName,
+        lastName: account.LastName,
+        email: account.PersonEmail,
+        language: account.Language__c,
+      },
     });
   } catch (err) {
     next(err);
@@ -175,7 +297,7 @@ router.post('/auth/refresh', validateRequest(refreshSchema), async (req, res, ne
     if (payload.type !== 'client_refresh') {
       return res.status(401).json({ error: 'Invalid refresh token' });
     }
-    const tokens = generateClientTokens(payload.accountId, payload.phone);
+    const tokens = generateClientTokens(payload.accountId, payload.email, payload.provider);
     res.json(tokens);
   } catch (err) {
     if (err.name === 'TokenExpiredError') {
@@ -189,7 +311,6 @@ router.post('/auth/refresh', validateRequest(refreshSchema), async (req, res, ne
 
 /**
  * GET /api/client/profile
- * Get current client's profile.
  */
 router.get('/profile', clientAuth, async (req, res, next) => {
   try {
@@ -200,7 +321,6 @@ router.get('/profile', clientAuth, async (req, res, next) => {
       id: account.Id,
       firstName: account.FirstName,
       lastName: account.LastName,
-      phone: req.client.phone,
       email: account.PersonEmail,
       language: account.Language__c,
       mainPickupLocation: account.Main_Pickup_Location__c,
@@ -218,7 +338,6 @@ router.get('/profile', clientAuth, async (req, res, next) => {
 
 /**
  * PATCH /api/client/profile
- * Update current client's profile.
  */
 router.patch('/profile', clientAuth, validateRequest(updateProfileSchema), async (req, res, next) => {
   try {
@@ -231,19 +350,19 @@ router.patch('/profile', clientAuth, validateRequest(updateProfileSchema), async
 
 /**
  * POST /api/client/deliveries
- * Create a new delivery request.
  */
 router.post('/deliveries', clientAuth, validateRequest(createDeliverySchema), async (req, res, next) => {
   try {
     const data = req.body;
-    const { valid, formatted } = validateE164(data.recipientPhone);
-    if (!valid) return res.status(400).json({ error: 'Invalid recipient phone number' });
 
-    // Find or note recipient account
     let recipientId = null;
-    const recipientAccount = await accountService.findByPhone(formatted);
-    if (recipientAccount) {
-      recipientId = recipientAccount.Id;
+    if (data.recipientPhone) {
+      const { validateE164 } = require('../utils/phoneValidator');
+      const { valid, formatted } = validateE164(data.recipientPhone);
+      if (valid) {
+        const recipientAccount = await accountService.findByPhone(formatted);
+        if (recipientAccount) recipientId = recipientAccount.Id;
+      }
     }
 
     const deliveryId = await deliveryService.create({
@@ -271,7 +390,6 @@ router.post('/deliveries', clientAuth, validateRequest(createDeliverySchema), as
 
 /**
  * GET /api/client/deliveries
- * List client's deliveries (as sender or recipient).
  */
 router.get('/deliveries', clientAuth, async (req, res, next) => {
   try {
@@ -289,7 +407,6 @@ router.get('/deliveries', clientAuth, async (req, res, next) => {
 
 /**
  * GET /api/client/deliveries/:id
- * Get a specific delivery (only if client is sender or recipient).
  */
 router.get('/deliveries/:id', clientAuth, validateSfIdParam(), async (req, res, next) => {
   try {
@@ -308,7 +425,6 @@ router.get('/deliveries/:id', clientAuth, validateSfIdParam(), async (req, res, 
 
 /**
  * POST /api/client/deliveries/:id/cancel
- * Cancel a delivery (only sender, only if status allows).
  */
 router.post('/deliveries/:id/cancel', clientAuth, validateSfIdParam(), async (req, res, next) => {
   try {
@@ -319,10 +435,10 @@ router.post('/deliveries/:id/cancel', clientAuth, validateSfIdParam(), async (re
       return res.status(403).json({ error: 'Only the sender can cancel a delivery' });
     }
 
-    await deliveryService.updateStatus(req.params.id, 'Cancelled', {
-      cancellationReason: req.body.reason || 'Cancelled by sender',
+    await deliveryService.updateStatus(req.params.id, 'Canceled', {
+      cancellationReason: req.body.reason || 'Canceled by sender',
     });
-    res.json({ message: 'Delivery cancelled' });
+    res.json({ message: 'Delivery canceled' });
   } catch (err) {
     next(err);
   }
@@ -330,7 +446,6 @@ router.post('/deliveries/:id/cancel', clientAuth, validateSfIdParam(), async (re
 
 /**
  * GET /api/client/payments
- * List client's payments.
  */
 router.get('/payments', clientAuth, async (req, res, next) => {
   try {

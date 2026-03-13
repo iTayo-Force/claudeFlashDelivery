@@ -13,9 +13,10 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
+    "google-auth-library": "^10.6.1",
     "helmet": "^8.0.0",
-    "jsonwebtoken": "^9.0.2",
     "jsforce": "^1.11.1",
+    "jsonwebtoken": "^9.0.2",
     "libphonenumber-js": "^1.11.18",
     "morgan": "^1.10.0",
     "zod": "^3.24.2"

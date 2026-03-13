@@ -30,7 +30,7 @@ const bulkAssignSchema = z.object({
 router.get('/unassigned', async (req, res, next) => {
   try {
     const result = await deliveryService.list({
-      status: 'New',
+      status: 'Ordered',
       limit: 100,
       offset: 0,
     });
@@ -46,7 +46,7 @@ router.get('/unassigned', async (req, res, next) => {
 
 /**
  * GET /api/operations/active
- * List all active deliveries (Assigned, Picked Up, In Transit).
+ * List all active deliveries (Ordered, Picked up — not yet delivered or canceled).
  */
 router.get('/active', async (req, res, next) => {
   try {
@@ -59,7 +59,7 @@ router.get('/active', async (req, res, next) => {
           Driver__r.Name, Driver__c,
           Booking_DateTime__c, Delivery_DateTime__c
          FROM Delivery__c
-         WHERE Status__c IN ('Assigned', 'Picked Up', 'In Transit')
+         WHERE Status__c IN ('Ordered', 'Picked up')
          ORDER BY Booking_DateTime__c ASC
          LIMIT 200`
       );
@@ -85,11 +85,7 @@ router.post('/assign/:id', validateSfIdParam(), validateRequest(assignSchema), a
       salesRepId,
     });
 
-    // Auto-transition to Assigned if currently New
     const delivery = await deliveryService.findById(req.params.id);
-    if (delivery && delivery.Status__c === 'New') {
-      await deliveryService.updateStatus(req.params.id, 'Assigned');
-    }
 
     const updated = await deliveryService.findById(req.params.id);
     res.json(updated);
@@ -110,10 +106,6 @@ router.post('/bulk-assign', validateRequest(bulkAssignSchema), async (req, res, 
     for (const id of deliveryIds) {
       try {
         await deliveryService.update(id, { driverId });
-        const delivery = await deliveryService.findById(id);
-        if (delivery && delivery.Status__c === 'New') {
-          await deliveryService.updateStatus(id, 'Assigned');
-        }
         results.push({ id, success: true });
       } catch (err) {
         results.push({ id, success: false, error: err.message });
@@ -148,7 +140,7 @@ router.get('/drivers-availability', async (req, res, next) => {
         `SELECT Driver__c, COUNT(Id) cnt
          FROM Delivery__c
          WHERE Driver__c IN (${driverIds})
-         AND Status__c IN ('Assigned', 'Picked Up', 'In Transit')
+         AND Status__c IN ('Ordered', 'Picked up')
          GROUP BY Driver__c`
       );
       return result.records;

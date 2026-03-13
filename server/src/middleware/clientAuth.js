@@ -4,7 +4,7 @@ const config = require('../config/env');
 /**
  * Middleware to authenticate client requests via JWT.
  * Expects: Authorization: Bearer <token>
- * Sets: req.client = { accountId, phone }
+ * Sets: req.client = { accountId, email, provider }
  */
 function clientAuth(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -20,7 +20,8 @@ function clientAuth(req, res, next) {
     }
     req.client = {
       accountId: payload.accountId,
-      phone: payload.phone,
+      email: payload.email,
+      provider: payload.provider,
     };
     next();
   } catch (err) {
@@ -33,15 +34,18 @@ function clientAuth(req, res, next) {
 
 /**
  * Generate JWT tokens for a client.
+ * @param {string} accountId - Salesforce Account ID
+ * @param {string} email - Client email
+ * @param {string} provider - Auth provider ('google', 'apple', 'email')
  */
-function generateClientTokens(accountId, phone) {
+function generateClientTokens(accountId, email, provider) {
   const accessToken = jwt.sign(
-    { accountId, phone, type: 'client' },
+    { accountId, email, provider, type: 'client' },
     config.jwt.clientSecret,
     { expiresIn: config.jwt.accessExpiry }
   );
   const refreshToken = jwt.sign(
-    { accountId, phone, type: 'client_refresh' },
+    { accountId, email, provider, type: 'client_refresh' },
     config.jwt.clientSecret,
     { expiresIn: config.jwt.refreshExpiry }
   );

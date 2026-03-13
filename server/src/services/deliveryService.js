@@ -18,15 +18,13 @@ const DELIVERY_FIELDS = [
   'Missing_Information__c', 'Delivery_City__c',
 ].join(', ');
 
-const VALID_STATUSES = ['New', 'Assigned', 'Picked Up', 'In Transit', 'Delivered', 'Cancelled'];
+const VALID_STATUSES = ['Ordered', 'Picked up', 'Canceled', 'Delivered'];
 
 const STATUS_TRANSITIONS = {
-  'New': ['Assigned', 'Cancelled'],
-  'Assigned': ['Picked Up', 'Cancelled'],
-  'Picked Up': ['In Transit', 'Cancelled'],
-  'In Transit': ['Delivered', 'Cancelled'],
+  'Ordered': ['Picked up', 'Canceled'],
+  'Picked up': ['Delivered', 'Canceled'],
   'Delivered': [],
-  'Cancelled': [],
+  'Canceled': [],
 };
 
 /**
@@ -40,7 +38,7 @@ async function create(data) {
     const record = {
       Sender__c: data.senderId,
       Recipient__c: data.recipientId || null,
-      Status__c: 'New',
+      Status__c: 'Ordered',
       Type__c: data.type,
       Payment_Method__c: data.paymentMethod,
       Pickup_Location_Name__c: data.pickupLocationName,
@@ -107,14 +105,14 @@ async function updateStatus(deliveryId, newStatus, extras = {}) {
 
     const record = { Id: deliveryId, Status__c: newStatus };
 
-    if (newStatus === 'Picked Up') {
+    if (newStatus === 'Picked up') {
       record.Picked_Up_DateTime__c = new Date().toISOString();
     }
     if (newStatus === 'Delivered') {
       record.Delivery_DateTime__c = new Date().toISOString();
       if (extras.amountCollected != null) record.Amount_collected__c = extras.amountCollected;
     }
-    if (newStatus === 'Cancelled' && extras.cancellationReason) {
+    if (newStatus === 'Canceled' && extras.cancellationReason) {
       record.Cancelation_Reason__c = String(extras.cancellationReason).slice(0, 255);
     }
 

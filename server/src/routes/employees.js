@@ -1,25 +1,28 @@
 const express = require('express');
 const { z } = require('zod');
+const bcrypt = require('bcryptjs');
 const { employeeAuth, requirePermission, generateEmployeeTokens } = require('../middleware/employeeAuth');
 const { authLimiter } = require('../middleware/rateLimiter');
 const validateRequest = require('../middleware/validateRequest');
 const validateSfIdParam = require('../middleware/validateSfId');
 const { validateE164 } = require('../utils/phoneValidator');
+const { escapeString } = require('../utils/soqlSanitizer');
 const employeeService = require('../services/employeeService');
-const smsService = require('../services/smsService');
 const config = require('../config/env');
 const jwt = require('jsonwebtoken');
 
 const router = express.Router();
 
 // --- Auth schemas ---
-const requestOtpSchema = z.object({
-  phone: z.string().min(5),
+const emailLoginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
 });
 
-const verifyOtpSchema = z.object({
-  phone: z.string().min(5),
-  code: z.string().length(6),
+const setPasswordSchema = z.object({
+  email: z.string().email(),
+  currentPassword: z.string().optional(),
+  newPassword: z.string().min(8).max(128),
 });
 
 const refreshSchema = z.object({
@@ -30,6 +33,7 @@ const createSchema = z.object({
   firstName: z.string().min(1).max(80),
   lastName: z.string().min(1).max(80),
   email: z.string().email(),
+  password: z.string().min(8).max(128),
   mobile: z.string().min(5),
   title: z.enum(['C-Level', 'Delivery Manager', 'Sales Rep', 'Service Rep', 'Driver']),
   salutation: z.string().optional(),
@@ -51,38 +55,32 @@ const updateSchema = z.object({
 // ==================== AUTH (public) ====================
 
 /**
- * POST /api/employees/auth/request-otp
+ * POST /api/employees/auth/login
+ * Employee login with email and password.
  */
-router.post('/auth/request-otp', authLimiter, validateRequest(requestOtpSchema), async (req, res, next) => {
+router.post('/auth/login', authLimiter, validateRequest(emailLoginSchema), async (req, res, next) => {
   try {
-    const { valid, formatted, error } = validateE164(req.body.phone);
-    if (!valid) return res.status(400).json({ error });
+    const { email, password } = req.body;
+    const safeEmail = escapeString(email);
 
-    // Verify employee exists and is active
-    const employee = await employeeService.findByMobile(formatted);
-    if (!employee) return res.status(404).json({ error: 'Employee not found or inactive' });
+    const { withConnection } = require('../config/salesforce');
+    const employee = await withConnection(async (conn) => {
+      const result = await conn.query(
+        `SELECT Id, Name, First_Name__c, Last_Name__c, Email__c, Title__c, IsActive__c, Password_Hash__c
+         FROM Employee__c
+         WHERE Email__c = '${safeEmail}' AND IsActive__c = true LIMIT 1`
+      );
+      return result.records[0] || null;
+    });
 
-    await smsService.sendOtp(formatted);
-    res.json({ message: 'OTP sent' });
-  } catch (err) {
-    next(err);
-  }
-});
+    if (!employee || !employee.Password_Hash__c) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
 
-/**
- * POST /api/employees/auth/verify-otp
- */
-router.post('/auth/verify-otp', authLimiter, validateRequest(verifyOtpSchema), async (req, res, next) => {
-  try {
-    const { phone, code } = req.body;
-    const { valid: phoneValid, formatted } = validateE164(phone);
-    if (!phoneValid) return res.status(400).json({ error: 'Invalid phone number' });
-
-    const { valid, error } = smsService.verifyOtp(formatted, code);
-    if (!valid) return res.status(400).json({ error });
-
-    const employee = await employeeService.findByMobile(formatted);
-    if (!employee) return res.status(404).json({ error: 'Employee not found' });
+    const valid = await bcrypt.compare(password, employee.Password_Hash__c);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
 
     const tokens = generateEmployeeTokens(employee.Id, employee.Title__c, employee.Name);
     res.json({
@@ -94,6 +92,53 @@ router.post('/auth/verify-otp', authLimiter, validateRequest(verifyOtpSchema), a
         email: employee.Email__c,
       },
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/employees/auth/set-password
+ * Set or change employee password.
+ * First-time setup: no currentPassword needed.
+ * Password change: currentPassword required.
+ */
+router.post('/auth/set-password', authLimiter, validateRequest(setPasswordSchema), async (req, res, next) => {
+  try {
+    const { email, currentPassword, newPassword } = req.body;
+    const safeEmail = escapeString(email);
+
+    const { withConnection } = require('../config/salesforce');
+    const employee = await withConnection(async (conn) => {
+      const result = await conn.query(
+        `SELECT Id, Password_Hash__c, IsActive__c FROM Employee__c WHERE Email__c = '${safeEmail}' AND IsActive__c = true LIMIT 1`
+      );
+      return result.records[0] || null;
+    });
+
+    if (!employee) {
+      return res.status(404).json({ error: 'Employee not found or inactive.' });
+    }
+
+    if (employee.Password_Hash__c) {
+      if (!currentPassword) {
+        return res.status(400).json({ error: 'Current password is required to change password.' });
+      }
+      const valid = await bcrypt.compare(currentPassword, employee.Password_Hash__c);
+      if (!valid) {
+        return res.status(401).json({ error: 'Current password is incorrect.' });
+      }
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await withConnection(async (conn) => {
+      await conn.sobject('Employee__c').update({
+        Id: employee.Id,
+        Password_Hash__c: passwordHash,
+      });
+    });
+
+    res.json({ message: 'Password updated successfully.' });
   } catch (err) {
     next(err);
   }
@@ -122,7 +167,6 @@ router.post('/auth/refresh', validateRequest(refreshSchema), async (req, res, ne
 
 /**
  * GET /api/employees
- * List employees (requires employees permission).
  */
 router.get('/', employeeAuth, requirePermission('employees'), async (req, res, next) => {
   try {
@@ -141,7 +185,6 @@ router.get('/', employeeAuth, requirePermission('employees'), async (req, res, n
 
 /**
  * GET /api/employees/drivers
- * List active drivers.
  */
 router.get('/drivers', employeeAuth, requirePermission('employees'), async (req, res, next) => {
   try {
@@ -154,7 +197,6 @@ router.get('/drivers', employeeAuth, requirePermission('employees'), async (req,
 
 /**
  * GET /api/employees/me
- * Get current employee's profile.
  */
 router.get('/me', employeeAuth, async (req, res, next) => {
   try {
@@ -181,7 +223,7 @@ router.get('/:id', employeeAuth, requirePermission('employees'), validateSfIdPar
 
 /**
  * POST /api/employees
- * Create a new employee (managers/c-level only).
+ * Create a new employee with email/password (managers/c-level only).
  */
 router.post('/', employeeAuth, requirePermission('employees'), validateRequest(createSchema), async (req, res, next) => {
   try {
@@ -191,6 +233,17 @@ router.post('/', employeeAuth, requirePermission('employees'), validateRequest(c
     data.mobile = formatted;
 
     const id = await employeeService.create(data);
+
+    // Set the password for the new employee
+    const passwordHash = await bcrypt.hash(data.password, 12);
+    const { withConnection } = require('../config/salesforce');
+    await withConnection(async (conn) => {
+      await conn.sobject('Employee__c').update({
+        Id: id,
+        Password_Hash__c: passwordHash,
+      });
+    });
+
     const employee = await employeeService.findById(id);
     res.status(201).json(employee);
   } catch (err) {
@@ -200,7 +253,6 @@ router.post('/', employeeAuth, requirePermission('employees'), validateRequest(c
 
 /**
  * PATCH /api/employees/:id
- * Update an employee.
  */
 router.patch('/:id', employeeAuth, requirePermission('employees'), validateSfIdParam(), validateRequest(updateSchema), async (req, res, next) => {
   try {

@@ -69,7 +69,7 @@ router.get('/driver/:id', employeeAuth, requirePermission('tracking'), validateS
 
     // Filter to active deliveries only
     const activeDeliveries = deliveries.records.filter((d) =>
-      ['Assigned', 'Picked Up', 'In Transit'].includes(d.Status__c)
+      ['Ordered', 'Picked up'].includes(d.Status__c)
     );
 
     res.json({
@@ -118,7 +118,7 @@ router.get('/delivery/:id', validateSfIdParam(), async (req, res, next) => {
     };
 
     // Include driver location if delivery is active and has a driver
-    if (delivery.Driver__c && ['Assigned', 'Picked Up', 'In Transit'].includes(delivery.Status__c)) {
+    if (delivery.Driver__c && ['Ordered', 'Picked up'].includes(delivery.Status__c)) {
       const driver = await employeeService.findById(delivery.Driver__c);
       if (driver) {
         response.driver = {

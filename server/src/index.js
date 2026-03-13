@@ -16,7 +16,6 @@ const operationsRouter = require('./routes/operations');
 const routesRouter = require('./routes/routes');
 const trackingRouter = require('./routes/tracking');
 const paymentsRouter = require('./routes/payments');
-const notificationsRouter = require('./routes/notifications');
 const syncRouter = require('./routes/sync');
 
 const app = express();
@@ -55,7 +54,6 @@ app.use('/api/operations', operationsRouter);
 app.use('/api/routes', routesRouter);
 app.use('/api/tracking', trackingRouter);
 app.use('/api/payments', paymentsRouter);
-app.use('/api/notifications', notificationsRouter);
 app.use('/api/sync', syncRouter);
 
 // Health check

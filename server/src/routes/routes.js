@@ -28,16 +28,16 @@ router.get('/driver/:id', validateSfIdParam(), async (req, res, next) => {
 
     const deliveries = await deliveryService.listByDriver(req.params.id);
     const active = deliveries.records.filter((d) =>
-      ['Assigned', 'Picked Up', 'In Transit'].includes(d.Status__c)
+      ['Ordered', 'Picked up'].includes(d.Status__c)
     );
 
     // Build route waypoints ordered by status priority
-    const statusOrder = { 'In Transit': 0, 'Picked Up': 1, 'Assigned': 2 };
-    active.sort((a, b) => (statusOrder[a.Status__c] || 9) - (statusOrder[b.Status__c] || 9));
+    const statusOrder = { 'Picked up': 0, 'Ordered': 1 };
+    active.sort((a, b) => (statusOrder[a.Status__c] ?? 9) - (statusOrder[b.Status__c] ?? 9));
 
     const waypoints = [];
     for (const d of active) {
-      if (d.Status__c === 'Assigned') {
+      if (d.Status__c === 'Ordered') {
         waypoints.push({
           type: 'pickup',
           deliveryId: d.Id,
@@ -91,7 +91,7 @@ router.post('/optimize', validateRequest(optimizeSchema), async (req, res, next)
     } else {
       const result = await deliveryService.listByDriver(driverId);
       deliveries = result.records.filter((d) =>
-        ['Assigned', 'Picked Up', 'In Transit'].includes(d.Status__c)
+        ['Ordered', 'Picked up'].includes(d.Status__c)
       );
     }
 
@@ -102,7 +102,7 @@ router.post('/optimize', validateRequest(optimizeSchema), async (req, res, next)
     // Build all waypoints
     const points = [];
     for (const d of deliveries) {
-      if (d.Status__c === 'Assigned') {
+      if (d.Status__c === 'Ordered') {
         points.push({
           type: 'pickup', deliveryId: d.Id,
           lat: d.Pickup_Geolocation__Latitude__s,
