@@ -2,6 +2,7 @@ const express = require('express');
 const { z } = require('zod');
 const { employeeAuth, requirePermission } = require('../middleware/employeeAuth');
 const validateRequest = require('../middleware/validateRequest');
+const validateSfIdParam = require('../middleware/validateSfId');
 const deliveryService = require('../services/deliveryService');
 const employeeService = require('../services/employeeService');
 
@@ -9,16 +10,18 @@ const router = express.Router();
 
 router.use(employeeAuth, requirePermission('routes'));
 
+const SF_ID_REGEX = /^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$/;
+
 const optimizeSchema = z.object({
-  driverId: z.string().min(1),
-  deliveryIds: z.array(z.string().min(1)).min(1).optional(),
+  driverId: z.string().regex(SF_ID_REGEX, 'Invalid Salesforce ID'),
+  deliveryIds: z.array(z.string().regex(SF_ID_REGEX, 'Invalid Salesforce ID')).min(1).optional(),
 });
 
 /**
  * GET /api/routes/driver/:id
  * Get a driver's active delivery route (ordered list of pickups and dropoffs).
  */
-router.get('/driver/:id', async (req, res, next) => {
+router.get('/driver/:id', validateSfIdParam(), async (req, res, next) => {
   try {
     const driver = await employeeService.findById(req.params.id);
     if (!driver) return res.status(404).json({ error: 'Driver not found' });

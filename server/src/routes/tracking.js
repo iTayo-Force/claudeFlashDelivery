@@ -1,8 +1,8 @@
 const express = require('express');
 const { z } = require('zod');
 const { employeeAuth, requirePermission } = require('../middleware/employeeAuth');
-const { clientAuth } = require('../middleware/clientAuth');
 const validateRequest = require('../middleware/validateRequest');
+const validateSfIdParam = require('../middleware/validateSfId');
 const employeeService = require('../services/employeeService');
 const deliveryService = require('../services/deliveryService');
 
@@ -58,7 +58,7 @@ router.get('/drivers', employeeAuth, requirePermission('tracking'), async (req, 
  * GET /api/tracking/driver/:id
  * Get a specific driver's location and active deliveries.
  */
-router.get('/driver/:id', employeeAuth, requirePermission('tracking'), async (req, res, next) => {
+router.get('/driver/:id', employeeAuth, requirePermission('tracking'), validateSfIdParam(), async (req, res, next) => {
   try {
     const driver = await employeeService.findById(req.params.id);
     if (!driver) return res.status(404).json({ error: 'Driver not found' });
@@ -92,7 +92,7 @@ router.get('/driver/:id', employeeAuth, requirePermission('tracking'), async (re
  * GET /api/tracking/delivery/:id
  * Track a delivery — returns driver location if assigned (client or employee).
  */
-router.get('/delivery/:id', async (req, res, next) => {
+router.get('/delivery/:id', validateSfIdParam(), async (req, res, next) => {
   // Accept either client or employee token
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Authentication required' });

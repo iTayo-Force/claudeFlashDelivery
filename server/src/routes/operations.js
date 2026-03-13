@@ -2,22 +2,25 @@ const express = require('express');
 const { z } = require('zod');
 const { employeeAuth, requirePermission } = require('../middleware/employeeAuth');
 const validateRequest = require('../middleware/validateRequest');
+const validateSfIdParam = require('../middleware/validateSfId');
 const deliveryService = require('../services/deliveryService');
 const employeeService = require('../services/employeeService');
+
+const SF_ID_REGEX = /^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$/;
 
 const router = express.Router();
 
 router.use(employeeAuth, requirePermission('operations'));
 
 const assignSchema = z.object({
-  driverId: z.string().min(1),
-  deliveryManagerId: z.string().optional(),
-  salesRepId: z.string().optional(),
+  driverId: z.string().regex(SF_ID_REGEX, 'Invalid Salesforce ID'),
+  deliveryManagerId: z.string().regex(SF_ID_REGEX, 'Invalid Salesforce ID').optional(),
+  salesRepId: z.string().regex(SF_ID_REGEX, 'Invalid Salesforce ID').optional(),
 });
 
 const bulkAssignSchema = z.object({
-  deliveryIds: z.array(z.string().min(1)).min(1),
-  driverId: z.string().min(1),
+  deliveryIds: z.array(z.string().regex(SF_ID_REGEX, 'Invalid Salesforce ID')).min(1).max(50),
+  driverId: z.string().regex(SF_ID_REGEX, 'Invalid Salesforce ID'),
 });
 
 /**
@@ -72,7 +75,7 @@ router.get('/active', async (req, res, next) => {
  * POST /api/operations/assign/:id
  * Assign driver/manager to a delivery.
  */
-router.post('/assign/:id', validateRequest(assignSchema), async (req, res, next) => {
+router.post('/assign/:id', validateSfIdParam(), validateRequest(assignSchema), async (req, res, next) => {
   try {
     const { driverId, deliveryManagerId, salesRepId } = req.body;
 
@@ -132,7 +135,12 @@ router.get('/drivers-availability', async (req, res, next) => {
     const drivers = await employeeService.listDrivers();
     const { withConnection } = require('../config/salesforce');
 
-    const driverIds = drivers.map((d) => `'${d.Id}'`).join(',');
+    if (drivers.length === 0) return res.json([]);
+    // IDs come from Salesforce query results (trusted), but validate format as defense-in-depth
+    const driverIds = drivers
+      .filter((d) => /^[a-zA-Z0-9]{15,18}$/.test(d.Id))
+      .map((d) => `'${d.Id}'`)
+      .join(',');
     if (!driverIds) return res.json([]);
 
     const counts = await withConnection(async (conn) => {

@@ -1,4 +1,5 @@
 const { withConnection } = require('../config/salesforce');
+const { validateSfId, escapeString, validateDate, validateEnum } = require('../utils/soqlSanitizer');
 
 const DELIVERY_FIELDS = [
   'Id', 'Name', 'Delivery_Reference__c',
@@ -32,10 +33,13 @@ const STATUS_TRANSITIONS = {
  * Create a new delivery.
  */
 async function create(data) {
+  validateSfId(data.senderId, 'senderId');
+  if (data.recipientId) validateSfId(data.recipientId, 'recipientId');
+
   return withConnection(async (conn) => {
     const record = {
       Sender__c: data.senderId,
-      Recipient__c: data.recipientId,
+      Recipient__c: data.recipientId || null,
       Status__c: 'New',
       Type__c: data.type,
       Payment_Method__c: data.paymentMethod,
@@ -67,6 +71,7 @@ async function create(data) {
  * Get a delivery by Id.
  */
 async function findById(deliveryId) {
+  validateSfId(deliveryId, 'deliveryId');
   return withConnection(async (conn) => {
     const result = await conn.query(
       `SELECT ${DELIVERY_FIELDS} FROM Delivery__c WHERE Id = '${deliveryId}' LIMIT 1`
@@ -79,11 +84,8 @@ async function findById(deliveryId) {
  * Update delivery status with transition validation.
  */
 async function updateStatus(deliveryId, newStatus, extras = {}) {
-  if (!VALID_STATUSES.includes(newStatus)) {
-    const err = new Error(`Invalid status: ${newStatus}`);
-    err.statusCode = 400;
-    throw err;
-  }
+  validateSfId(deliveryId, 'deliveryId');
+  validateEnum(newStatus, VALID_STATUSES, 'status');
 
   return withConnection(async (conn) => {
     const current = await conn.query(
@@ -113,7 +115,7 @@ async function updateStatus(deliveryId, newStatus, extras = {}) {
       if (extras.amountCollected != null) record.Amount_collected__c = extras.amountCollected;
     }
     if (newStatus === 'Cancelled' && extras.cancellationReason) {
-      record.Cancelation_Reason__c = extras.cancellationReason;
+      record.Cancelation_Reason__c = String(extras.cancellationReason).slice(0, 255);
     }
 
     const result = await conn.sobject('Delivery__c').update(record);
@@ -126,15 +128,17 @@ async function updateStatus(deliveryId, newStatus, extras = {}) {
  * Update delivery fields (assignment, details, etc.).
  */
 async function update(deliveryId, data) {
+  validateSfId(deliveryId, 'deliveryId');
+
   return withConnection(async (conn) => {
     const record = { Id: deliveryId };
-    if (data.driverId) record.Driver__c = data.driverId;
-    if (data.deliveryManagerId) record.Delivery_Manager__c = data.deliveryManagerId;
-    if (data.salesRepId) record.Sales_Rep__c = data.salesRepId;
-    if (data.recipientId) record.Recipient__c = data.recipientId;
+    if (data.driverId) { validateSfId(data.driverId, 'driverId'); record.Driver__c = data.driverId; }
+    if (data.deliveryManagerId) { validateSfId(data.deliveryManagerId, 'deliveryManagerId'); record.Delivery_Manager__c = data.deliveryManagerId; }
+    if (data.salesRepId) { validateSfId(data.salesRepId, 'salesRepId'); record.Sales_Rep__c = data.salesRepId; }
+    if (data.recipientId) { validateSfId(data.recipientId, 'recipientId'); record.Recipient__c = data.recipientId; }
     if (data.paymentMethod) record.Payment_Method__c = data.paymentMethod;
-    if (data.description) record.Description__c = data.description;
-    if (data.comment) record.Comment__c = data.comment;
+    if (data.description) record.Description__c = String(data.description).slice(0, 255);
+    if (data.comment) record.Comment__c = String(data.comment).slice(0, 255);
     if (data.type) record.Type__c = data.type;
     if (data.pickupLocationName) record.Pickup_Location_Name__c = data.pickupLocationName;
     if (data.deliveryLocationName) record.Delivery_Location_Name__c = data.deliveryLocationName;
@@ -159,13 +163,20 @@ async function update(deliveryId, data) {
  * List deliveries for a given account (as sender or recipient).
  */
 async function listByAccount(accountId, { status, limit = 20, offset = 0 } = {}) {
+  validateSfId(accountId, 'accountId');
+  const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
+  const safeOffset = Math.max(parseInt(offset, 10) || 0, 0);
+
   return withConnection(async (conn) => {
     let where = `(Sender__c = '${accountId}' OR Recipient__c = '${accountId}')`;
-    if (status) where += ` AND Status__c = '${status}'`;
+    if (status) {
+      validateEnum(status, VALID_STATUSES, 'status');
+      where += ` AND Status__c = '${status}'`;
+    }
 
     const countResult = await conn.query(`SELECT COUNT() FROM Delivery__c WHERE ${where}`);
     const result = await conn.query(
-      `SELECT ${DELIVERY_FIELDS} FROM Delivery__c WHERE ${where} ORDER BY Booking_DateTime__c DESC LIMIT ${limit} OFFSET ${offset}`
+      `SELECT ${DELIVERY_FIELDS} FROM Delivery__c WHERE ${where} ORDER BY Booking_DateTime__c DESC LIMIT ${safeLimit} OFFSET ${safeOffset}`
     );
     return { records: result.records, total: countResult.totalSize };
   });
@@ -175,12 +186,19 @@ async function listByAccount(accountId, { status, limit = 20, offset = 0 } = {})
  * List deliveries assigned to a driver.
  */
 async function listByDriver(employeeId, { status, limit = 20, offset = 0 } = {}) {
+  validateSfId(employeeId, 'employeeId');
+  const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
+  const safeOffset = Math.max(parseInt(offset, 10) || 0, 0);
+
   return withConnection(async (conn) => {
     let where = `Driver__c = '${employeeId}'`;
-    if (status) where += ` AND Status__c = '${status}'`;
+    if (status) {
+      validateEnum(status, VALID_STATUSES, 'status');
+      where += ` AND Status__c = '${status}'`;
+    }
 
     const result = await conn.query(
-      `SELECT ${DELIVERY_FIELDS} FROM Delivery__c WHERE ${where} ORDER BY Booking_DateTime__c DESC LIMIT ${limit} OFFSET ${offset}`
+      `SELECT ${DELIVERY_FIELDS} FROM Delivery__c WHERE ${where} ORDER BY Booking_DateTime__c DESC LIMIT ${safeLimit} OFFSET ${safeOffset}`
     );
     return { records: result.records, total: result.totalSize };
   });
@@ -190,20 +208,41 @@ async function listByDriver(employeeId, { status, limit = 20, offset = 0 } = {})
  * List deliveries with filters (for operations/dashboard).
  */
 async function list({ status, city, driverId, managerId, dateFrom, dateTo, limit = 50, offset = 0 } = {}) {
+  const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
+  const safeOffset = Math.max(parseInt(offset, 10) || 0, 0);
+
   return withConnection(async (conn) => {
     const conditions = [];
-    if (status) conditions.push(`Status__c = '${status}'`);
-    if (city) conditions.push(`Delivery_City__c = '${city}'`);
-    if (driverId) conditions.push(`Driver__c = '${driverId}'`);
-    if (managerId) conditions.push(`Delivery_Manager__c = '${managerId}'`);
-    if (dateFrom) conditions.push(`Booking_DateTime__c >= ${dateFrom}T00:00:00Z`);
-    if (dateTo) conditions.push(`Booking_DateTime__c <= ${dateTo}T23:59:59Z`);
+    if (status) {
+      validateEnum(status, VALID_STATUSES, 'status');
+      conditions.push(`Status__c = '${status}'`);
+    }
+    if (city) {
+      const safeCity = escapeString(city);
+      conditions.push(`Delivery_City__c = '${safeCity}'`);
+    }
+    if (driverId) {
+      validateSfId(driverId, 'driverId');
+      conditions.push(`Driver__c = '${driverId}'`);
+    }
+    if (managerId) {
+      validateSfId(managerId, 'managerId');
+      conditions.push(`Delivery_Manager__c = '${managerId}'`);
+    }
+    if (dateFrom) {
+      validateDate(dateFrom, 'dateFrom');
+      conditions.push(`Booking_DateTime__c >= ${dateFrom}T00:00:00Z`);
+    }
+    if (dateTo) {
+      validateDate(dateTo, 'dateTo');
+      conditions.push(`Booking_DateTime__c <= ${dateTo}T23:59:59Z`);
+    }
 
-    const where = conditions.length > 0 ? conditions.join(' AND ') : '1=1';
+    const where = conditions.length > 0 ? conditions.join(' AND ') : 'Id != null';
 
     const countResult = await conn.query(`SELECT COUNT() FROM Delivery__c WHERE ${where}`);
     const result = await conn.query(
-      `SELECT ${DELIVERY_FIELDS} FROM Delivery__c WHERE ${where} ORDER BY Booking_DateTime__c DESC LIMIT ${limit} OFFSET ${offset}`
+      `SELECT ${DELIVERY_FIELDS} FROM Delivery__c WHERE ${where} ORDER BY Booking_DateTime__c DESC LIMIT ${safeLimit} OFFSET ${safeOffset}`
     );
     return { records: result.records, total: countResult.totalSize };
   });

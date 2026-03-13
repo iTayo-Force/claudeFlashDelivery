@@ -2,8 +2,11 @@ const express = require('express');
 const { z } = require('zod');
 const { employeeAuth, requirePermission } = require('../middleware/employeeAuth');
 const validateRequest = require('../middleware/validateRequest');
+const validateSfIdParam = require('../middleware/validateSfId');
 const accountService = require('../services/accountService');
 const deliveryService = require('../services/deliveryService');
+
+const SF_ID_REGEX = /^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$/;
 
 const router = express.Router();
 
@@ -20,7 +23,7 @@ const updateSchema = z.object({
   mainDeliveryLocation: z.string().optional(),
   mainDeliveryLat: z.number().optional(),
   mainDeliveryLng: z.number().optional(),
-  accountManager: z.string().optional(),
+  accountManager: z.string().regex(SF_ID_REGEX, 'Invalid Salesforce ID').optional(),
   followUpDate: z.string().optional(),
 });
 
@@ -61,7 +64,7 @@ router.get('/search', async (req, res, next) => {
  * GET /api/accounts/:id
  * Get account details.
  */
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', validateSfIdParam(), async (req, res, next) => {
   try {
     const account = await accountService.findById(req.params.id);
     if (!account) return res.status(404).json({ error: 'Account not found' });
@@ -75,7 +78,7 @@ router.get('/:id', async (req, res, next) => {
  * PATCH /api/accounts/:id
  * Update account.
  */
-router.patch('/:id', validateRequest(updateSchema), async (req, res, next) => {
+router.patch('/:id', validateSfIdParam(), validateRequest(updateSchema), async (req, res, next) => {
   try {
     await accountService.update(req.params.id, req.body);
     const updated = await accountService.findById(req.params.id);
@@ -89,7 +92,7 @@ router.patch('/:id', validateRequest(updateSchema), async (req, res, next) => {
  * GET /api/accounts/:id/deliveries
  * List deliveries for an account.
  */
-router.get('/:id/deliveries', async (req, res, next) => {
+router.get('/:id/deliveries', validateSfIdParam(), async (req, res, next) => {
   try {
     const { status, limit, offset } = req.query;
     const result = await deliveryService.listByAccount(req.params.id, {

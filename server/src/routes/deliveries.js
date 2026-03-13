@@ -2,8 +2,12 @@ const express = require('express');
 const { z } = require('zod');
 const { employeeAuth, requirePermission } = require('../middleware/employeeAuth');
 const validateRequest = require('../middleware/validateRequest');
+const validateSfIdParam = require('../middleware/validateSfId');
 const deliveryService = require('../services/deliveryService');
 const paymentService = require('../services/paymentService');
+
+const SF_ID_REGEX = /^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$/;
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 const router = express.Router();
 
@@ -12,8 +16,8 @@ router.use(employeeAuth, requirePermission('deliveries'));
 
 // --- Schemas ---
 const createSchema = z.object({
-  senderId: z.string().min(1),
-  recipientId: z.string().optional(),
+  senderId: z.string().regex(SF_ID_REGEX, 'Invalid Salesforce ID'),
+  recipientId: z.string().regex(SF_ID_REGEX, 'Invalid Salesforce ID').optional(),
   pickupLocationName: z.string().min(1),
   pickupLat: z.number().min(-90).max(90),
   pickupLng: z.number().min(-180).max(180),
@@ -29,10 +33,10 @@ const createSchema = z.object({
 });
 
 const updateSchema = z.object({
-  driverId: z.string().optional(),
-  deliveryManagerId: z.string().optional(),
-  salesRepId: z.string().optional(),
-  recipientId: z.string().optional(),
+  driverId: z.string().regex(SF_ID_REGEX, 'Invalid Salesforce ID').optional(),
+  deliveryManagerId: z.string().regex(SF_ID_REGEX, 'Invalid Salesforce ID').optional(),
+  salesRepId: z.string().regex(SF_ID_REGEX, 'Invalid Salesforce ID').optional(),
+  recipientId: z.string().regex(SF_ID_REGEX, 'Invalid Salesforce ID').optional(),
   paymentMethod: z.string().optional(),
   description: z.string().max(255).optional(),
   comment: z.string().max(255).optional(),
@@ -54,12 +58,12 @@ const statusSchema = z.object({
 });
 
 const listSchema = z.object({
-  status: z.string().optional(),
-  city: z.string().optional(),
-  driverId: z.string().optional(),
-  managerId: z.string().optional(),
-  dateFrom: z.string().optional(),
-  dateTo: z.string().optional(),
+  status: z.enum(['New', 'Assigned', 'Picked Up', 'In Transit', 'Delivered', 'Cancelled']).optional(),
+  city: z.string().max(50).optional(),
+  driverId: z.string().regex(SF_ID_REGEX, 'Invalid Salesforce ID').optional(),
+  managerId: z.string().regex(SF_ID_REGEX, 'Invalid Salesforce ID').optional(),
+  dateFrom: z.string().regex(DATE_REGEX, 'Expected YYYY-MM-DD').optional(),
+  dateTo: z.string().regex(DATE_REGEX, 'Expected YYYY-MM-DD').optional(),
   limit: z.string().optional(),
   offset: z.string().optional(),
 });
@@ -100,7 +104,7 @@ router.post('/', validateRequest(createSchema), async (req, res, next) => {
  * GET /api/deliveries/:id
  * Get delivery details.
  */
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', validateSfIdParam(), async (req, res, next) => {
   try {
     const delivery = await deliveryService.findById(req.params.id);
     if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
@@ -114,7 +118,7 @@ router.get('/:id', async (req, res, next) => {
  * PATCH /api/deliveries/:id
  * Update delivery fields.
  */
-router.patch('/:id', validateRequest(updateSchema), async (req, res, next) => {
+router.patch('/:id', validateSfIdParam(), validateRequest(updateSchema), async (req, res, next) => {
   try {
     await deliveryService.update(req.params.id, req.body);
     const delivery = await deliveryService.findById(req.params.id);
@@ -128,7 +132,7 @@ router.patch('/:id', validateRequest(updateSchema), async (req, res, next) => {
  * POST /api/deliveries/:id/status
  * Update delivery status with transition validation.
  */
-router.post('/:id/status', validateRequest(statusSchema), async (req, res, next) => {
+router.post('/:id/status', validateSfIdParam(), validateRequest(statusSchema), async (req, res, next) => {
   try {
     const { status, amountCollected, cancellationReason } = req.body;
     await deliveryService.updateStatus(req.params.id, status, {
@@ -165,7 +169,7 @@ router.post('/:id/status', validateRequest(statusSchema), async (req, res, next)
  * GET /api/deliveries/:id/payments
  * Get payments linked to a delivery.
  */
-router.get('/:id/payments', async (req, res, next) => {
+router.get('/:id/payments', validateSfIdParam(), async (req, res, next) => {
   try {
     const payments = await paymentService.listByDelivery(req.params.id);
     res.json(payments);

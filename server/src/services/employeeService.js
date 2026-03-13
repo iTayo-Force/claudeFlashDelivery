@@ -1,4 +1,5 @@
 const { withConnection } = require('../config/salesforce');
+const { validateSfId, escapeString, validateEnum } = require('../utils/soqlSanitizer');
 
 const EMPLOYEE_FIELDS = [
   'Id', 'Name', 'First_Name__c', 'Last_Name__c', 'Salutation__c',
@@ -10,13 +11,16 @@ const EMPLOYEE_FIELDS = [
   'Deactivation_DateTime__c',
 ].join(', ');
 
+const VALID_ROLES = ['C-Level', 'Delivery Manager', 'Sales Rep', 'Service Rep', 'Driver'];
+
 /**
  * Find employee by mobile phone (E164 without +).
  */
 async function findByMobile(phone) {
+  const safePhone = escapeString(phone);
   return withConnection(async (conn) => {
     const result = await conn.query(
-      `SELECT ${EMPLOYEE_FIELDS} FROM Employee__c WHERE Mobile__c = '${phone}' AND IsActive__c = true LIMIT 1`
+      `SELECT ${EMPLOYEE_FIELDS} FROM Employee__c WHERE Mobile__c = '${safePhone}' AND IsActive__c = true LIMIT 1`
     );
     return result.records[0] || null;
   });
@@ -26,6 +30,7 @@ async function findByMobile(phone) {
  * Find employee by Id.
  */
 async function findById(employeeId) {
+  validateSfId(employeeId, 'employeeId');
   return withConnection(async (conn) => {
     const result = await conn.query(
       `SELECT ${EMPLOYEE_FIELDS} FROM Employee__c WHERE Id = '${employeeId}' LIMIT 1`
@@ -38,16 +43,24 @@ async function findById(employeeId) {
  * List employees with optional filters.
  */
 async function list({ role, active, limit = 50, offset = 0 } = {}) {
+  const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
+  const safeOffset = Math.max(parseInt(offset, 10) || 0, 0);
+
   return withConnection(async (conn) => {
     const conditions = [];
-    if (role) conditions.push(`Title__c = '${role}'`);
-    if (active != null) conditions.push(`IsActive__c = ${active}`);
+    if (role) {
+      validateEnum(role, VALID_ROLES, 'role');
+      conditions.push(`Title__c = '${role}'`);
+    }
+    if (active != null) {
+      conditions.push(`IsActive__c = ${active === true || active === 'true'}`);
+    }
 
     const where = conditions.length > 0 ? conditions.join(' AND ') : 'IsActive__c = true';
 
     const countResult = await conn.query(`SELECT COUNT() FROM Employee__c WHERE ${where}`);
     const result = await conn.query(
-      `SELECT ${EMPLOYEE_FIELDS} FROM Employee__c WHERE ${where} ORDER BY Name ASC LIMIT ${limit} OFFSET ${offset}`
+      `SELECT ${EMPLOYEE_FIELDS} FROM Employee__c WHERE ${where} ORDER BY Name ASC LIMIT ${safeLimit} OFFSET ${safeOffset}`
     );
     return { records: result.records, total: countResult.totalSize };
   });
@@ -69,6 +82,7 @@ async function listDrivers() {
  * Update employee's current GPS location.
  */
 async function updateLocation(employeeId, lat, lng) {
+  validateSfId(employeeId, 'employeeId');
   return withConnection(async (conn) => {
     const result = await conn.sobject('Employee__c').update({
       Id: employeeId,
@@ -85,13 +99,17 @@ async function updateLocation(employeeId, lat, lng) {
  * Update employee record.
  */
 async function update(employeeId, data) {
+  validateSfId(employeeId, 'employeeId');
   return withConnection(async (conn) => {
     const record = { Id: employeeId };
     if (data.firstName) record.First_Name__c = data.firstName;
     if (data.lastName) record.Last_Name__c = data.lastName;
     if (data.email) record.Email__c = data.email;
     if (data.mobile) record.Mobile__c = data.mobile;
-    if (data.title) record.Title__c = data.title;
+    if (data.title) {
+      validateEnum(data.title, VALID_ROLES, 'title');
+      record.Title__c = data.title;
+    }
     if (data.isActive != null) record.IsActive__c = data.isActive;
     if (data.customerService != null) record.Customer_Service__c = data.customerService;
 
@@ -105,6 +123,7 @@ async function update(employeeId, data) {
  * Create a new employee.
  */
 async function create(data) {
+  validateEnum(data.title, VALID_ROLES, 'title');
   return withConnection(async (conn) => {
     const record = {
       First_Name__c: data.firstName,
@@ -116,7 +135,10 @@ async function create(data) {
     };
     if (data.salutation) record.Salutation__c = data.salutation;
     if (data.birthday) record.Birthday__c = data.birthday;
-    if (data.company) record.Company__c = data.company;
+    if (data.company) {
+      validateSfId(data.company, 'company');
+      record.Company__c = data.company;
+    }
     if (data.customerService != null) record.Customer_Service__c = data.customerService;
 
     const result = await conn.sobject('Employee__c').create(record);
@@ -125,4 +147,4 @@ async function create(data) {
   });
 }
 
-module.exports = { findByMobile, findById, list, listDrivers, updateLocation, update, create };
+module.exports = { findByMobile, findById, list, listDrivers, updateLocation, update, create, VALID_ROLES };

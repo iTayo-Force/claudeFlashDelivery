@@ -16,8 +16,10 @@ const sendSmsSchema = z.object({
   message: z.string().min(1).max(160),
 });
 
+const SF_ID_REGEX = /^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$/;
+
 const deliveryNotifySchema = z.object({
-  deliveryId: z.string().min(1),
+  deliveryId: z.string().regex(SF_ID_REGEX, 'Invalid Salesforce ID'),
   type: z.enum(['pickup_ready', 'in_transit', 'delivered', 'cancelled']),
   customMessage: z.string().max(160).optional(),
 });

@@ -3,6 +3,7 @@ const { z } = require('zod');
 const { clientAuth, generateClientTokens } = require('../middleware/clientAuth');
 const { authLimiter } = require('../middleware/rateLimiter');
 const validateRequest = require('../middleware/validateRequest');
+const validateSfIdParam = require('../middleware/validateSfId');
 const { validateE164 } = require('../utils/phoneValidator');
 const accountService = require('../services/accountService');
 const deliveryService = require('../services/deliveryService');
@@ -290,7 +291,7 @@ router.get('/deliveries', clientAuth, async (req, res, next) => {
  * GET /api/client/deliveries/:id
  * Get a specific delivery (only if client is sender or recipient).
  */
-router.get('/deliveries/:id', clientAuth, async (req, res, next) => {
+router.get('/deliveries/:id', clientAuth, validateSfIdParam(), async (req, res, next) => {
   try {
     const delivery = await deliveryService.findById(req.params.id);
     if (!delivery) return res.status(404).json({ error: 'Delivery not found' });
@@ -309,7 +310,7 @@ router.get('/deliveries/:id', clientAuth, async (req, res, next) => {
  * POST /api/client/deliveries/:id/cancel
  * Cancel a delivery (only sender, only if status allows).
  */
-router.post('/deliveries/:id/cancel', clientAuth, async (req, res, next) => {
+router.post('/deliveries/:id/cancel', clientAuth, validateSfIdParam(), async (req, res, next) => {
   try {
     const delivery = await deliveryService.findById(req.params.id);
     if (!delivery) return res.status(404).json({ error: 'Delivery not found' });

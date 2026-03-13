@@ -1,4 +1,5 @@
 const { withConnection } = require('../config/salesforce');
+const { validateSfId, escapeString, escapeLike } = require('../utils/soqlSanitizer');
 
 const ACCOUNT_FIELDS = [
   'Id', 'FirstName', 'LastName', 'PersonEmail', 'Phone', 'PersonMobilePhone',
@@ -14,9 +15,10 @@ const ACCOUNT_FIELDS = [
  * Find a PersonAccount by phone (PhoneID__c stores E164 without +).
  */
 async function findByPhone(phone) {
+  const safePhone = escapeString(phone);
   return withConnection(async (conn) => {
     const result = await conn.query(
-      `SELECT ${ACCOUNT_FIELDS} FROM Account WHERE PhoneID__c = '${phone}' AND IsPersonAccount = true LIMIT 1`
+      `SELECT ${ACCOUNT_FIELDS} FROM Account WHERE PhoneID__c = '${safePhone}' AND IsPersonAccount = true LIMIT 1`
     );
     return result.records[0] || null;
   });
@@ -26,6 +28,7 @@ async function findByPhone(phone) {
  * Find a PersonAccount by Id.
  */
 async function findById(accountId) {
+  validateSfId(accountId, 'accountId');
   return withConnection(async (conn) => {
     const result = await conn.query(
       `SELECT ${ACCOUNT_FIELDS} FROM Account WHERE Id = '${accountId}' AND IsPersonAccount = true LIMIT 1`
@@ -39,7 +42,6 @@ async function findById(accountId) {
  */
 async function create(data) {
   return withConnection(async (conn) => {
-    // PersonAccounts use the Account object with a specific RecordType
     const rtResult = await conn.query(
       "SELECT Id FROM RecordType WHERE SObjectType = 'Account' AND IsPersonType = true LIMIT 1"
     );
@@ -78,6 +80,7 @@ async function create(data) {
  * Update a PersonAccount.
  */
 async function update(accountId, data) {
+  validateSfId(accountId, 'accountId');
   return withConnection(async (conn) => {
     const record = { Id: accountId };
     if (data.firstName) record.FirstName = data.firstName;
@@ -94,7 +97,10 @@ async function update(accountId, data) {
       record.Main_Delivery_GeoLocation__Latitude__s = data.mainDeliveryLat;
       record.Main_Delivery_GeoLocation__Longitude__s = data.mainDeliveryLng;
     }
-    if (data.accountManager) record.Account_Manager__c = data.accountManager;
+    if (data.accountManager) {
+      validateSfId(data.accountManager, 'accountManager');
+      record.Account_Manager__c = data.accountManager;
+    }
     if (data.followUpDate) record.Flash_Delivery_Follow_up_Date__c = data.followUpDate;
 
     const result = await conn.sobject('Account').update(record);
@@ -105,16 +111,18 @@ async function update(accountId, data) {
 
 /**
  * Search accounts by name or phone.
+ * Uses escapeLike to prevent SOQL LIKE injection (%, _, ', \).
  */
 async function search(query, limit = 20) {
+  const safeQuery = escapeLike(query);
+  const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
   return withConnection(async (conn) => {
-    const escapedQuery = query.replace(/'/g, "\\'");
     const result = await conn.query(
       `SELECT ${ACCOUNT_FIELDS} FROM Account
        WHERE IsPersonAccount = true
-       AND (Name LIKE '%${escapedQuery}%' OR PhoneID__c LIKE '%${escapedQuery}%' OR Phone LIKE '%${escapedQuery}%')
+       AND (Name LIKE '%${safeQuery}%' OR PhoneID__c LIKE '%${safeQuery}%' OR Phone LIKE '%${safeQuery}%')
        ORDER BY LastModifiedDate DESC
-       LIMIT ${limit}`
+       LIMIT ${safeLimit}`
     );
     return result.records;
   });
@@ -124,15 +132,21 @@ async function search(query, limit = 20) {
  * List accounts with pagination.
  */
 async function list({ limit = 20, offset = 0, scoring } = {}) {
+  const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
+  const safeOffset = Math.max(parseInt(offset, 10) || 0, 0);
+
   return withConnection(async (conn) => {
     let where = 'IsPersonAccount = true';
-    if (scoring) where += ` AND Delivery_Scoring__c = '${scoring}'`;
+    if (scoring) {
+      const safeScoring = escapeString(scoring);
+      where += ` AND Delivery_Scoring__c = '${safeScoring}'`;
+    }
 
     const countResult = await conn.query(`SELECT COUNT() FROM Account WHERE ${where}`);
     const total = countResult.totalSize;
 
     const result = await conn.query(
-      `SELECT ${ACCOUNT_FIELDS} FROM Account WHERE ${where} ORDER BY LastModifiedDate DESC LIMIT ${limit} OFFSET ${offset}`
+      `SELECT ${ACCOUNT_FIELDS} FROM Account WHERE ${where} ORDER BY LastModifiedDate DESC LIMIT ${safeLimit} OFFSET ${safeOffset}`
     );
     return { records: result.records, total };
   });

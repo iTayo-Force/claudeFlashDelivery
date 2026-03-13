@@ -2,7 +2,10 @@ const express = require('express');
 const { z } = require('zod');
 const { employeeAuth, requirePermission } = require('../middleware/employeeAuth');
 const validateRequest = require('../middleware/validateRequest');
+const validateSfIdParam = require('../middleware/validateSfId');
 const paymentService = require('../services/paymentService');
+
+const SF_ID_REGEX = /^[a-zA-Z0-9]{15}([a-zA-Z0-9]{3})?$/;
 
 const router = express.Router();
 
@@ -10,9 +13,9 @@ const router = express.Router();
 router.use(employeeAuth);
 
 const createSchema = z.object({
-  accountId: z.string().min(1),
+  accountId: z.string().regex(SF_ID_REGEX, 'Invalid Salesforce ID'),
   amount: z.number().positive(),
-  deliveryId: z.string().optional(),
+  deliveryId: z.string().regex(SF_ID_REGEX, 'Invalid Salesforce ID').optional(),
   type: z.enum(['Income', 'Expense']).optional(),
   status: z.string().optional(),
   label: z.string().optional(),
@@ -26,7 +29,7 @@ const lineItemSchema = z.object({
 });
 
 const statusSchema = z.object({
-  status: z.string().min(1),
+  status: z.enum(['Draft', 'Pending', 'Completed', 'Failed', 'Cancelled']),
 });
 
 /**
@@ -64,7 +67,7 @@ router.post('/', requirePermission('deliveries'), validateRequest(createSchema),
 /**
  * GET /api/payments/:id
  */
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', requirePermission('deliveries'), validateSfIdParam(), async (req, res, next) => {
   try {
     const payment = await paymentService.findById(req.params.id);
     if (!payment) return res.status(404).json({ error: 'Payment not found' });
@@ -78,7 +81,7 @@ router.get('/:id', async (req, res, next) => {
  * PATCH /api/payments/:id/status
  * Update payment status.
  */
-router.patch('/:id/status', requirePermission('dashboard'), validateRequest(statusSchema), async (req, res, next) => {
+router.patch('/:id/status', requirePermission('dashboard'), validateSfIdParam(), validateRequest(statusSchema), async (req, res, next) => {
   try {
     await paymentService.updateStatus(req.params.id, req.body.status);
     const payment = await paymentService.findById(req.params.id);
@@ -92,7 +95,7 @@ router.patch('/:id/status', requirePermission('dashboard'), validateRequest(stat
  * GET /api/payments/:id/line-items
  * Get line items for a payment.
  */
-router.get('/:id/line-items', async (req, res, next) => {
+router.get('/:id/line-items', requirePermission('deliveries'), validateSfIdParam(), async (req, res, next) => {
   try {
     const items = await paymentService.getLineItems(req.params.id);
     res.json(items);
@@ -105,7 +108,7 @@ router.get('/:id/line-items', async (req, res, next) => {
  * POST /api/payments/:id/line-items
  * Add a line item to a payment.
  */
-router.post('/:id/line-items', requirePermission('deliveries'), validateRequest(lineItemSchema), async (req, res, next) => {
+router.post('/:id/line-items', requirePermission('deliveries'), validateSfIdParam(), validateRequest(lineItemSchema), async (req, res, next) => {
   try {
     const id = await paymentService.createLineItem({
       paymentId: req.params.id,

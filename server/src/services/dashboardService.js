@@ -1,4 +1,5 @@
 const { withConnection } = require('../config/salesforce');
+const { escapeString, validateDate } = require('../utils/soqlSanitizer');
 
 /**
  * Get delivery statistics for the dashboard.
@@ -6,10 +7,20 @@ const { withConnection } = require('../config/salesforce');
 async function getDeliveryStats({ dateFrom, dateTo, city } = {}) {
   return withConnection(async (conn) => {
     const conditions = [];
-    if (dateFrom) conditions.push(`Booking_DateTime__c >= ${dateFrom}T00:00:00Z`);
-    if (dateTo) conditions.push(`Booking_DateTime__c <= ${dateTo}T23:59:59Z`);
-    if (city) conditions.push(`Delivery_City__c = '${city}'`);
+    if (dateFrom) {
+      validateDate(dateFrom, 'dateFrom');
+      conditions.push(`Booking_DateTime__c >= ${dateFrom}T00:00:00Z`);
+    }
+    if (dateTo) {
+      validateDate(dateTo, 'dateTo');
+      conditions.push(`Booking_DateTime__c <= ${dateTo}T23:59:59Z`);
+    }
+    if (city) {
+      const safeCity = escapeString(city);
+      conditions.push(`Delivery_City__c = '${safeCity}'`);
+    }
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const whereAnd = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')} AND` : 'WHERE';
 
     const [statusCounts, revenueTotals, avgTimes] = await Promise.all([
       conn.query(
@@ -19,7 +30,7 @@ async function getDeliveryStats({ dateFrom, dateTo, city } = {}) {
         `SELECT SUM(AmountFormula__c) totalRevenue, SUM(Amount_collected__c) totalCollected, COUNT(Id) totalDeliveries FROM Delivery__c ${where}`
       ),
       conn.query(
-        `SELECT AVG(Pickup_Time_Mins__c) avgPickup, AVG(Delivery_Time_Mins__c) avgDelivery FROM Delivery__c ${where} AND Status__c = 'Delivered'`
+        `SELECT AVG(Pickup_Time_Mins__c) avgPickup, AVG(Delivery_Time_Mins__c) avgDelivery FROM Delivery__c ${whereAnd} Status__c = 'Delivered'`
       ),
     ]);
 
@@ -48,8 +59,14 @@ async function getDeliveryStats({ dateFrom, dateTo, city } = {}) {
 async function getDriverStats({ dateFrom, dateTo } = {}) {
   return withConnection(async (conn) => {
     const conditions = ['Driver__c != null'];
-    if (dateFrom) conditions.push(`Booking_DateTime__c >= ${dateFrom}T00:00:00Z`);
-    if (dateTo) conditions.push(`Booking_DateTime__c <= ${dateTo}T23:59:59Z`);
+    if (dateFrom) {
+      validateDate(dateFrom, 'dateFrom');
+      conditions.push(`Booking_DateTime__c >= ${dateFrom}T00:00:00Z`);
+    }
+    if (dateTo) {
+      validateDate(dateTo, 'dateTo');
+      conditions.push(`Booking_DateTime__c <= ${dateTo}T23:59:59Z`);
+    }
     const where = conditions.join(' AND ');
 
     const result = await conn.query(
@@ -79,8 +96,14 @@ async function getDriverStats({ dateFrom, dateTo } = {}) {
 async function getRevenueByCity({ dateFrom, dateTo } = {}) {
   return withConnection(async (conn) => {
     const conditions = [];
-    if (dateFrom) conditions.push(`Booking_DateTime__c >= ${dateFrom}T00:00:00Z`);
-    if (dateTo) conditions.push(`Booking_DateTime__c <= ${dateTo}T23:59:59Z`);
+    if (dateFrom) {
+      validateDate(dateFrom, 'dateFrom');
+      conditions.push(`Booking_DateTime__c >= ${dateFrom}T00:00:00Z`);
+    }
+    if (dateTo) {
+      validateDate(dateTo, 'dateTo');
+      conditions.push(`Booking_DateTime__c <= ${dateTo}T23:59:59Z`);
+    }
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const result = await conn.query(

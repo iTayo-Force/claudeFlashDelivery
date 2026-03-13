@@ -3,6 +3,7 @@ const { z } = require('zod');
 const { employeeAuth, requirePermission, generateEmployeeTokens } = require('../middleware/employeeAuth');
 const { authLimiter } = require('../middleware/rateLimiter');
 const validateRequest = require('../middleware/validateRequest');
+const validateSfIdParam = require('../middleware/validateSfId');
 const { validateE164 } = require('../utils/phoneValidator');
 const employeeService = require('../services/employeeService');
 const smsService = require('../services/smsService');
@@ -168,7 +169,7 @@ router.get('/me', employeeAuth, async (req, res, next) => {
 /**
  * GET /api/employees/:id
  */
-router.get('/:id', employeeAuth, requirePermission('employees'), async (req, res, next) => {
+router.get('/:id', employeeAuth, requirePermission('employees'), validateSfIdParam(), async (req, res, next) => {
   try {
     const employee = await employeeService.findById(req.params.id);
     if (!employee) return res.status(404).json({ error: 'Employee not found' });
@@ -201,7 +202,7 @@ router.post('/', employeeAuth, requirePermission('employees'), validateRequest(c
  * PATCH /api/employees/:id
  * Update an employee.
  */
-router.patch('/:id', employeeAuth, requirePermission('employees'), validateRequest(updateSchema), async (req, res, next) => {
+router.patch('/:id', employeeAuth, requirePermission('employees'), validateSfIdParam(), validateRequest(updateSchema), async (req, res, next) => {
   try {
     await employeeService.update(req.params.id, req.body);
     const employee = await employeeService.findById(req.params.id);
