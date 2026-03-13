@@ -1,0 +1,40 @@
+{
+  "cli": {
+    "version": ">= 12.0.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://192.168.1.100:3001/api",
+        "EXPO_PUBLIC_WS_URL": "ws://192.168.1.100:3001/ws"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://staging-api.claudeflash.cm/api",
+        "EXPO_PUBLIC_WS_URL": "wss://staging-api.claudeflash.cm/ws"
+      }
+    },
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.claudeflash.cm/api",
+        "EXPO_PUBLIC_WS_URL": "wss://api.claudeflash.cm/ws"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "your-apple-id@example.com",
+        "ascAppId": "your-app-store-connect-app-id"
+      },
+      "android": {
+        "serviceAccountKeyPath": "./google-services-key.json",
+        "track": "internal"
+      }
+    }
+  }
+}

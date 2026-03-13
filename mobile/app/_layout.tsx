@@ -3,12 +3,15 @@ import { View } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useAuth } from '../hooks/useAuth';
+import { useNotifications } from '../hooks/useNotifications';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { OfflineBanner } from '../components/OfflineBanner';
 import { colors } from '../utils/theme';
 
 export default function RootLayout() {
   const restore = useAuth((s) => s.restore);
+  const isLoggedIn = useAuth((s) => !!s.accessToken);
+  useNotifications();
 
   useEffect(() => {
     restore();

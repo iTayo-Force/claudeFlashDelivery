@@ -6,6 +6,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useDeliveries } from '../../hooks/useDeliveries';
 import { Button, Input, Card } from '../../components/common';
+import { AddressAutocomplete } from '../../components/AddressAutocomplete';
 import { formatCurrency, packageSizeLabels } from '../../utils/helpers';
 import { colors, spacing, fontSize, borderRadius } from '../../utils/theme';
 import { PriceEstimate, DeliveryRequest } from '../../services/deliveries';
@@ -94,7 +95,7 @@ export default function NewDelivery() {
         {step === 'pickup' && (
           <View>
             <Text style={styles.stepTitle}>📍 Point de ramassage</Text>
-            <Input label="Adresse de ramassage *" placeholder="Quartier, Rue, Ville" value={form.pickupAddress} onChangeText={(v) => update('pickupAddress')(v)} />
+            <AddressAutocomplete label="Adresse de ramassage *" placeholder="Quartier, Rue, Ville" value={form.pickupAddress} onChangeText={(v) => update('pickupAddress')(v)} onSelect={(details) => update('pickupAddress')(details.address)} />
             <Input label="Nom du contact *" placeholder="Nom complet" value={form.pickupContactName} onChangeText={(v) => update('pickupContactName')(v)} />
             <Input label="Téléphone du contact *" placeholder="+237 6XX XXX XXX" value={form.pickupContactPhone} onChangeText={(v) => update('pickupContactPhone')(v)} keyboardType="phone-pad" />
           </View>
@@ -103,7 +104,7 @@ export default function NewDelivery() {
         {step === 'dropoff' && (
           <View>
             <Text style={styles.stepTitle}>📍 Point de livraison</Text>
-            <Input label="Adresse de livraison *" placeholder="Quartier, Rue, Ville" value={form.dropoffAddress} onChangeText={(v) => update('dropoffAddress')(v)} />
+            <AddressAutocomplete label="Adresse de livraison *" placeholder="Quartier, Rue, Ville" value={form.dropoffAddress} onChangeText={(v) => update('dropoffAddress')(v)} onSelect={(details) => update('dropoffAddress')(details.address)} />
             <Input label="Nom du destinataire *" placeholder="Nom complet" value={form.dropoffContactName} onChangeText={(v) => update('dropoffContactName')(v)} />
             <Input label="Téléphone du destinataire *" placeholder="+237 6XX XXX XXX" value={form.dropoffContactPhone} onChangeText={(v) => update('dropoffContactPhone')(v)} keyboardType="phone-pad" />
           </View>
